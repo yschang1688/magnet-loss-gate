@@ -1,0 +1,25 @@
+{
+  "material": "Material E",
+  "n": 2013,
+  "steinmetz": {
+    "steinmetz_rel_err_p50": 11.118463778479324,
+    "steinmetz_rel_err_p95": 62.709452861855794,
+    "steinmetz_rel_err_p99": 125.08065152184842
+  },
+  "lgbm": {
+    "lgbm_rel_err_p50": 3.1629482104873805,
+    "lgbm_rel_err_p95": 24.87785250500984,
+    "lgbm_rel_err_p99": 57.92552635494218
+  },
+  "steinmetz_params": {
+    "alpha": 1.250676118301456,
+    "beta": 3.024725361212654,
+    "log_k": 3.8469667767899516
+  },
+  "physics_gate": {
+    "G1_positivity_ok": true,
+    "G2_freq_mono_violation_rate": 0.0325,
+    "G3_flux_mono_violation_rate": 0.03,
+    "G4_steinmetz_3x_flag_rate": 0.00992063492063492
+  }
+}

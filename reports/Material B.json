@@ -1,0 +1,25 @@
+{
+  "material": "Material B",
+  "n": 7400,
+  "steinmetz": {
+    "steinmetz_rel_err_p50": 24.55815348466671,
+    "steinmetz_rel_err_p95": 82.74420300916042,
+    "steinmetz_rel_err_p99": 113.53369787060764
+  },
+  "lgbm": {
+    "lgbm_rel_err_p50": 3.1545402270159957,
+    "lgbm_rel_err_p95": 16.71236291286514,
+    "lgbm_rel_err_p99": 28.154998061389534
+  },
+  "steinmetz_params": {
+    "alpha": 1.8448921638348086,
+    "beta": 2.065218582861657,
+    "log_k": -4.763335170659683
+  },
+  "physics_gate": {
+    "G1_positivity_ok": true,
+    "G2_freq_mono_violation_rate": 0.0,
+    "G3_flux_mono_violation_rate": 0.0025,
+    "G4_steinmetz_3x_flag_rate": 0.015675675675675675
+  }
+}

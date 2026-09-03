@@ -87,6 +87,7 @@ def main():
     Xtr, Xte, ytr, yte = train_test_split(X, y_log, test_size=0.25, random_state=42)
     Pte = np.exp(yte)
 
+    mlflow.set_tracking_uri("sqlite:///" + str((Path(__file__).parent.parent / "mlflow.db").absolute()))
     mlflow.set_experiment("magnet-loss-gate")
     with mlflow.start_run(run_name=f"{args.material}-lgbm-vs-steinmetz"):
         mlflow.log_params({"material": args.material, "n_samples": len(X),
