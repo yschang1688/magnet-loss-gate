@@ -77,6 +77,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--material", default="N87")
     ap.add_argument("--data", default="data/extracted")
+    ap.add_argument("--monotone", type=int, default=1,
+                    help="1 = enforce loss non-decreasing in freq, b_pk, b_pp_half inside the model (physics as a structural constraint)")
     args = ap.parse_args()
 
     B, f, T, P = load_material(Path(args.data), args.material)
@@ -89,7 +91,7 @@ def main():
 
     mlflow.set_tracking_uri("sqlite:///" + str((Path(__file__).parent.parent / "mlflow.db").absolute()))
     mlflow.set_experiment("magnet-loss-gate")
-    with mlflow.start_run(run_name=f"{args.material}-lgbm-vs-steinmetz"):
+    with mlflow.start_run(run_name=f"{args.material}-lgbm-vs-steinmetz" + ("-mono" if args.monotone else "")):
         mlflow.log_params({"material": args.material, "n_samples": len(X),
                            "features": ",".join(X.columns)})
 
@@ -99,8 +101,11 @@ def main():
         mlflow.log_params({f"se_{k}": round(v, 4) for k, v in st_params.items()})
         mlflow.log_metrics(st_metrics)
 
-        ml = lgb.LGBMRegressor(n_estimators=600, learning_rate=0.05,
-                               num_leaves=63, random_state=42)
+        mono = [1 if c in ("freq", "b_pk", "b_pp_half") else 0 for c in X.columns] if args.monotone else None
+        ml = lgb.LGBMRegressor(n_estimators=600, learning_rate=0.05, num_leaves=63, random_state=42,
+                               monotone_constraints=mono, monotone_constraints_method="advanced" if mono else "basic",
+                               verbose=-1)
+        mlflow.log_param("monotone_constraints", str(mono))
         ml.fit(Xtr, ytr)
         ml_te = np.exp(ml.predict(Xte))
         ml_metrics = {f"lgbm_{k}": v for k, v in rel_err(Pte, ml_te).items()}
@@ -118,13 +123,22 @@ def main():
         mlflow.log_metrics({k: (float(v) if not isinstance(v, bool) else int(v))
                             for k, v in gate.items()})
 
-        report = {"material": args.material, "n": len(X),
+        report = {"material": args.material, "n": len(X), "monotone": bool(args.monotone),
                   "steinmetz": st_metrics, "lgbm": ml_metrics,
                   "steinmetz_params": st_params, "physics_gate": gate}
         out = Path("reports"); out.mkdir(exist_ok=True)
-        rp = out / f"{args.material}.json"
+        rp = out / (f"{args.material}" + ("-mono" if args.monotone else "") + ".json")
         rp.write_text(json.dumps(report, indent=2))
         mlflow.log_artifact(str(rp))
+
+        # persist surrogate + training distribution: optimize.py and drift.py consume these
+        import joblib
+        mdir = Path("models"); mdir.mkdir(exist_ok=True)
+        bundle = {"model": ml, "steinmetz": st_params, "X_train": Xtr.reset_index(drop=True),
+                  "features": list(X.columns), "material": args.material}
+        mp = mdir / f"{args.material}.joblib"
+        joblib.dump(bundle, mp)
+        mlflow.log_param("model_bundle", str(mp))
         print(json.dumps(report, indent=2))
 
 

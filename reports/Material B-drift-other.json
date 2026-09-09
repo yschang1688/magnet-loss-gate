@@ -1,0 +1,18 @@
+{
+  "model_material": "Material B",
+  "batch": "Material E",
+  "n_batch": 2013,
+  "psi_per_feature": {
+    "freq": 2.3406,
+    "temp": 0.007,
+    "b_pk": 2.4507,
+    "b_pp_half": 2.3495,
+    "b_form": 0.2057,
+    "crest_dB": 0.0591,
+    "duty_pos": 0.0488,
+    "purity": 0.0907
+  },
+  "worst_feature": "b_pk",
+  "psi_threshold": 0.25,
+  "retrain_triggered": true
+}

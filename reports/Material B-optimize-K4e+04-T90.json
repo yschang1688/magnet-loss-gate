@@ -1,0 +1,78 @@
+{
+  "material": "Material B",
+  "constraint_Bpk_x_f": 40000.0,
+  "temp_C": 90.0,
+  "design_space": {
+    "freq_range_hz": [
+      49960,
+      501190
+    ],
+    "n_candidates": 180,
+    "waveform_templates": {
+      "sine": {
+        "b_form": 0.7076721902781228,
+        "crest_dB": 1.4173784022093827,
+        "duty_pos": 0.5,
+        "purity": 0.9999997363568122,
+        "pp_ratio": 0.9999486987626198
+      },
+      "triangle_50": {
+        "b_form": 0.9115971117433664,
+        "crest_dB": 2.353828151264451,
+        "duty_pos": 0.5,
+        "purity": 0.9029058953037243,
+        "pp_ratio": 0.9985297727173122
+      },
+      "triangle_20": {
+        "b_form": 0.5697185793522106,
+        "crest_dB": 2.159675488387172,
+        "duty_pos": 0.201171875,
+        "purity": 0.8271568838737232,
+        "pp_ratio": 0.985045190224725
+      }
+    }
+  },
+  "gate": {
+    "in_dist_threshold": 0.581,
+    "n_pass": 34,
+    "n_reject_out_of_dist": 146,
+    "n_reject_g4": 29,
+    "n_reject_g5_saturation": 54,
+    "b_sat_T": 0.4
+  },
+  "optimum_raw_surrogate": {
+    "freq_hz": 49960,
+    "b_pk_T": 0.8006,
+    "waveform": "sine",
+    "p_ml_W_per_m3": 397210.9,
+    "p_se_W_per_m3": 2513847.8,
+    "in_dist": false,
+    "nn_dist": 13.431,
+    "below_saturation": false,
+    "gate_pass": false
+  },
+  "optimum_gated": {
+    "freq_hz": 445743,
+    "b_pk_T": 0.0897,
+    "waveform": "triangle_20",
+    "p_ml_W_per_m3": 1874712.4,
+    "p_se_W_per_m3": 1552126.1,
+    "in_dist": true,
+    "nn_dist": 0.517,
+    "below_saturation": true,
+    "gate_pass": true
+  },
+  "steinmetz_recommendation": {
+    "freq_hz": 501190,
+    "b_pk_T": 0.0798,
+    "waveform": "sine",
+    "p_ml_W_per_m3": 2296385.2,
+    "p_se_W_per_m3": 1512545.7,
+    "in_dist": true,
+    "nn_dist": 0.48,
+    "below_saturation": true,
+    "gate_pass": true
+  },
+  "loss_saving_vs_steinmetz_pct": 18.4,
+  "raw_optimum_rejected_by_gate": true
+}
