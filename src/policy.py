@@ -27,6 +27,7 @@ from sklearn.linear_model import LinearRegression
 sys.path.insert(0, str(Path(__file__).parent))
 from optimize import pick_templates, build_candidates, in_distribution  # noqa: E402
 from train import steinmetz_pred  # noqa: E402
+from mlp_surrogate import ResidualSurrogate  # noqa: E402,F401  (unpickle support)
 
 
 def gated_optimum(bundle, K, T, b_sat, n_freq=60):
@@ -54,10 +55,11 @@ def main():
     ap.add_argument("--b-sat", type=float, default=0.40)
     ap.add_argument("--k-grid", default="3e3,5e3,8e3,1.2e4,2e4,3e4,4e4")
     ap.add_argument("--t-grid", default="25,50,70,90")
+    ap.add_argument("--bundle", default="", help="model bundle suffix, e.g. -mlp")
     ap.add_argument("--tol", type=float, default=0.20, help="loss tolerance band for smoothing (0.05 = within 5%% of cell optimum)")
     args = ap.parse_args()
     root = Path(__file__).parent.parent
-    b = joblib.load(root / "models" / f"{args.material}.joblib")
+    b = joblib.load(root / "models" / f"{args.material}{args.bundle}.joblib")
     Ks = [float(x) for x in args.k_grid.split(",")]
     Ts = [float(x) for x in args.t_grid.split(",")]
 
@@ -132,8 +134,8 @@ def main():
     }
 
     out = root / "reports"; out.mkdir(exist_ok=True)
-    P.to_csv(out / f"{args.material}-policy-table.csv", index=False)
-    (out / f"{args.material}-policy-report.json").write_text(json.dumps(report, indent=2))
+    P.to_csv(out / f"{args.material}{args.bundle}-policy-table.csv", index=False)
+    (out / f"{args.material}{args.bundle}-policy-report.json").write_text(json.dumps(report, indent=2))
 
     # ---- C header the firmware side can drop in ----
     inc = root / "include"; inc.mkdir(exist_ok=True)
@@ -146,19 +148,19 @@ def main():
         g = P[P["temp_C"] == T].sort_values("K_T_Hz")
         hdr.append("  {" + ", ".join("0" if pd.isna(v) else str(int(v)) for v in g["f_smooth_hz"]) + "},")
     hdr.append("};")
-    (inc / "policy_table.h").write_text("\n".join(hdr) + "\n")
+    (inc / ("policy_table%s.h" % args.bundle.replace("-","_"))).write_text("\n".join(hdr) + "\n")
 
     mlflow.set_tracking_uri("sqlite:///" + str((root / "mlflow.db").absolute()))
     mlflow.set_experiment("magnet-loss-gate")
-    with mlflow.start_run(run_name=f"{args.material}-policy"):
+    with mlflow.start_run(run_name=f"{args.material}{args.bundle}-policy"):
         mlflow.log_params({"material": args.material, "b_sat": args.b_sat, "n_cells": len(P)})
         mlflow.log_metrics({"veto_rate": report["veto_rate"], "cells_feasible": report["cells_feasible"],
                             "max_jump_argmin": report["max_neighbour_jump_log_f_argmin"] or 0,
                             "max_jump_smoothed": report["max_neighbour_jump_log_f_smoothed"] or 0,
                             "max_loss_penalty_pct": report["max_loss_penalty_pct_from_smoothing"]})
-        for f in (f"{args.material}-policy-table.csv", f"{args.material}-policy-report.json"):
+        for f in (f"{args.material}{args.bundle}-policy-table.csv", f"{args.material}{args.bundle}-policy-report.json"):
             mlflow.log_artifact(str(out / f))
-        mlflow.log_artifact(str(inc / "policy_table.h"))
+        mlflow.log_artifact(str(inc / ("policy_table%s.h" % args.bundle.replace("-","_"))))
     print(json.dumps(report, indent=2))
     print("argmin f*:"); print(P.pivot(index="temp_C", columns="K_T_Hz", values="f_star_hz").to_string())
     print("smoothed f*:"); print(P.pivot(index="temp_C", columns="K_T_Hz", values="f_smooth_hz").to_string())

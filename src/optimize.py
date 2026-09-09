@@ -28,7 +28,8 @@ import mlflow
 from sklearn.neighbors import NearestNeighbors
 
 sys.path.insert(0, str(Path(__file__).parent))
-from train import steinmetz_pred  # noqa: E402  (same log-space SE fit)
+from train import steinmetz_pred  # noqa: E402
+from mlp_surrogate import ResidualSurrogate  # noqa: E402,F401  (unpickle support)  (same log-space SE fit)
 
 SHAPE_COLS = ["b_form", "crest_dB", "duty_pos", "purity"]
 
@@ -81,11 +82,12 @@ def main():
     ap.add_argument("--temp", type=float, default=50.0)
     ap.add_argument("--n-freq", type=int, default=60)
     ap.add_argument("--b-sat", type=float, default=0.40, help="G5: ferrite saturation bound for B_pk [T]")
+    ap.add_argument("--bundle", default="", help="model bundle suffix, e.g. -mlp")
     args = ap.parse_args()
-    tag = f"K{args.k:.0e}-T{args.temp:.0f}"
+    tag = f"K{args.k:.0e}-T{args.temp:.0f}" + (args.bundle if args.bundle else "")
 
     root = Path(__file__).parent.parent
-    b = joblib.load(root / "models" / f"{args.material}.joblib")
+    b = joblib.load(root / "models" / f"{args.material}{args.bundle}.joblib")
     model, Xtr, feats = b["model"], b["X_train"], b["features"]
 
     fmin, fmax = float(Xtr["freq"].min()), float(Xtr["freq"].max())

@@ -31,6 +31,16 @@
 | 低伏秒 K=5e3, 25 °C | 501 kHz（推到頻率上限） | **~250 kHz** | **26.5%** | 2/180 |
 | 高伏秒 K=4e4, 90 °C | 501 kHz | **~446 kHz** | **18.4%** | **146/180**；裸模型最佳點落在 50 kHz、B_pk=0.80 T（鐵氧體飽和的兩倍）、離訓練分布 13.4（門檻 0.58）——**優化器鑽進了代理模型外推最錯的角落，被 G5 飽和與分布內檢查攔下** |
 
+**代理交叉檢驗（`--bundle=-mlp`：換成 JD3 的 Steinmetz＋殘差 MLP 當代理）**
+
+| 情境 | LightGBM＋單調 | Steinmetz＋殘差 MLP |
+|---|---|---|
+| 低伏秒最佳點／vs 經驗式推薦 | ~250 kHz／−26.5% | **~161 kHz／−14.1%** |
+| 高伏秒裸最佳點 | 50 kHz、B_pk 0.80 T（掉洞，閘門攔） | **501 kHz、可行區內（不掉洞）**；閘門後＝經驗式推薦點，−0% |
+| 策略表：裸表被否決／鄰格跳幅（tol 0.20） | 10/28／4.6×→2.1× | **1/28／3.8×→1.5×**，f* 隨伏秒單調上升 |
+
+讀法：①**節省幅度依代理而異**（26.5% vs 14.1%）——這個差距就是「排序不取代模擬」的理由；②純 ML 代理外推會掉洞、靠閘門救，**物理骨幹＋殘差的代理自己不掉洞**——把物理寫進模型結構的第二層證據；閘門仍留著，擋的是我們沒想到的錯；③高伏秒時頻率上限本來就是最佳點，經驗式在那裡是對的。
+
 Steinmetz 因 α<β 永遠把設計推到頻率上限（邊界解）；代理模型找到內部最佳點。**「損耗節省」＝用同一把尺（代理模型）評估兩個設計點的差**——圖上的虛線是 Steinmetz 自己算的損耗，高頻低估（其 82.7% 誤差的來源），不可與實線直接比；真實節省要以模擬／量測驗證，這正是管線「排序不取代模擬」的理由。波形間（sine vs triangle）的差異在模型雜訊帶內，本 demo 不對波形下結論。
 
 **嵌入式小模型 PoC**（`embedded.py`，Material B）：`log P = Steinmetz(f, B_pk) + g(ln f, ln B_pk, T, purity, duty, crest)`，g 為 6→16→16→1 tanh MLP
@@ -88,7 +98,7 @@ Steinmetz 因 α<β 永遠把設計推到頻率上限（邊界解）；代理模
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
 # data/extracted/final-training/：從 Princeton 頁面下載 final-training.zip 解壓
 .venv/bin/python src/train.py    --material "Material B" --data data/extracted/final-training
-.venv/bin/python src/optimize.py --material "Material B" --k 4e4 --temp 90
+.venv/bin/python src/optimize.py --material "Material B" --k 4e4 --temp 90            # 加 --bundle=-mlp 換殘差 MLP 代理（先跑 src/mlp_surrogate.py）
 .venv/bin/python src/drift.py    --material "Material B" --batch other --other "Material E"
 .venv/bin/python src/policy.py   --material "Material B"          # 策略表 + include/policy_table.h
 .venv/bin/python src/embedded.py --material "Material B" --adapt-material "Material E"   # 嵌入式小模型 PoC + include/residual_mlp.h
