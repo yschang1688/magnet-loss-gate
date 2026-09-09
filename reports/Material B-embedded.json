@@ -1,0 +1,98 @@
+{
+  "material": "Material B",
+  "n_train": 5550,
+  "n_test": 1850,
+  "steinmetz": {
+    "rel_err_p50": 24.55815348466671,
+    "rel_err_p95": 82.74420300916042,
+    "rel_err_p99": 113.53369787060764
+  },
+  "steinmetz_plus_tiny_mlp": {
+    "rel_err_p50": 1.171712561025458,
+    "rel_err_p95": 3.971769339562351,
+    "rel_err_p99": 6.731325877048233
+  },
+  "breakdown": {
+    "temp": {
+      "25": {
+        "n": 460,
+        "se_p95": 108.6,
+        "se+mlp_p95": 3.9
+      },
+      "50": {
+        "n": 506,
+        "se_p95": 71.9,
+        "se+mlp_p95": 4.1
+      },
+      "70": {
+        "n": 437,
+        "se_p95": 64.1,
+        "se+mlp_p95": 3.9
+      },
+      "90": {
+        "n": 447,
+        "se_p95": 59.4,
+        "se+mlp_p95": 4.1
+      }
+    },
+    "waveform": {
+      "non-sine": {
+        "n": 944,
+        "se_p95": 77.4,
+        "se+mlp_p95": 4.1
+      },
+      "sine": {
+        "n": 906,
+        "se_p95": 88.2,
+        "se+mlp_p95": 3.9
+      }
+    }
+  },
+  "embedded": {
+    "params": 401,
+    "macs_per_inference": 368,
+    "float32_bytes": 1604,
+    "int16_bytes": 880,
+    "int8_bytes": 512,
+    "est_us_at_100MHz_1MAC_per_cycle": 3.68,
+    "float32_p95": 4.0,
+    "int16_quantised_p95": 4.0,
+    "int8_quantised_p95": 14.6,
+    "note": "per-tensor symmetric quantisation; int8 loses too much here -> ship int16 or float32 (C2000 has FPU)"
+  },
+  "holdout_temperature": {
+    "25": {
+      "n": 1904,
+      "se_p95": 140.8,
+      "se+mlp_p95": 13.2
+    },
+    "50": {
+      "n": 1910,
+      "se_p95": 76.8,
+      "se+mlp_p95": 6.0
+    },
+    "70": {
+      "n": 1797,
+      "se_p95": 56.1,
+      "se+mlp_p95": 5.0
+    },
+    "90": {
+      "n": 1789,
+      "se_p95": 64.5,
+      "se+mlp_p95": 10.9
+    }
+  },
+  "gate": {
+    "G2_freq_mono_violation_rate": 0.0,
+    "G3_flux_mono_violation_rate": 0.0
+  },
+  "drift_adaptation": {
+    "adapt_material": "Material E",
+    "few_shot_n": 200,
+    "n_test": 1007,
+    "stale_steinmetz_from_B_p95": 661.1,
+    "stale_B_model_p95": 741.5,
+    "refit_steinmetz_200_p95": 69.7,
+    "refit_steinmetz_200_plus_finetuned_mlp_p95": 29.8
+  }
+}
