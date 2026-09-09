@@ -149,11 +149,21 @@ def main():
         bad = g[~g["gate_pass"]]
         ax.scatter(bad["freq"] / 1e3, bad["p_ml"] / 1e3, color=colors[wf], marker="x", s=28, alpha=.8)
     ax.plot(C[C.waveform == "sine"]["freq"] / 1e3, C[C.waveform == "sine"]["p_se"] / 1e3,
-            color="#7C858D", lw=1.2, ls="--", label="Steinmetz (sine)")
-    ax.scatter([gated["freq"] / 1e3], [gated["p_ml"] / 1e3], s=140, facecolor="none",
-               edgecolor="#0E6E78", lw=2.5, zorder=5, label="gated optimum")
+            color="#7C858D", lw=1.2, ls="--", label="Steinmetz's own prediction (underestimates at high f)")
+    ax.scatter([se_best["freq"] / 1e3], [se_best["p_ml"] / 1e3], s=130, marker="s", facecolor="none",
+               edgecolor="#7C858D", lw=2.2, zorder=5, label="Steinmetz-recommended point, scored by surrogate")
+    ax.scatter([gated["freq"] / 1e3], [gated["p_ml"] / 1e3], s=150, facecolor="none",
+               edgecolor="#0E6E78", lw=2.5, zorder=6, label="gated optimum (surrogate)")
     ax.scatter([raw["freq"] / 1e3], [raw["p_ml"] / 1e3], s=110, marker="D", facecolor="none",
-               edgecolor="#A2332A", lw=2, zorder=5, label="raw surrogate optimum")
+               edgecolor="#A2332A", lw=2, zorder=6, label="raw surrogate optimum")
+    ymax = float(C["p_ml"].max()) / 1e3
+    ax.annotate(f"−{result['loss_saving_vs_steinmetz_pct']:.1f}%  (same evaluator: surrogate at both points)",
+                xy=(gated["freq"] / 1e3, gated["p_ml"] / 1e3),
+                xytext=(gated["freq"] / 1e3 * 0.62, min(ymax * 0.97, gated["p_ml"] / 1e3 * 1.9)),
+                fontsize=8.5, color="#0E6E78", ha="center", va="bottom",
+                arrowprops=dict(arrowstyle="->", color="#0E6E78", lw=1.2, connectionstyle="arc3,rad=-0.25"))
+    ax.annotate("", xy=(se_best["freq"] / 1e3, se_best["p_ml"] / 1e3), xytext=(gated["freq"] / 1e3, gated["p_ml"] / 1e3),
+                arrowprops=dict(arrowstyle="-", color="#0E6E78", lw=1, ls=":"))
     ax.set_xscale("log")
     ax.set_xlabel("switching frequency f [kHz]   (B_pk = K / f, K = %.0e T·Hz, T = %.0f °C)" % (args.k, args.temp))
     ax.set_ylabel("core loss P_v [kW/m³]")
@@ -161,7 +171,7 @@ def main():
     from matplotlib.ticker import FuncFormatter
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}")); ax.xaxis.set_minor_formatter(FuncFormatter(lambda v, _: f"{v:g}" if v in (60,70,80,90,200,300,400) else ""))
-    ax.grid(True, which="both", alpha=.25); ax.legend(fontsize=8, ncol=2)
+    ax.grid(True, which="both", alpha=.25); ax.legend(fontsize=7.5, ncol=1, loc="upper left", framealpha=.92)
     fig.tight_layout(); fig.savefig(out / f"{args.material}-optimize-{tag}.png"); plt.close(fig)
 
     mlflow.set_tracking_uri("sqlite:///" + str((root / "mlflow.db").absolute()))
