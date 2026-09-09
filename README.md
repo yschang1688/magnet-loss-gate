@@ -2,7 +2,7 @@
 
 > 目的：對照一則電源 AI 工程師 JD 的三條職責，用公開實測資料做一輪端到端的可驗證實作（第三條為 PoC：DSP 級小模型＋策略表，迴路整合歸韌體）。
 > 資料：[Princeton MagNet](https://www.princeton.edu/~minjie/magnet.html)（IEEE PELS MagNet Challenge 2023，磁材匿名版 A–E）。
-> 範圍：兩個晚上、單磁材、未調參——**方法論的遷移證明，不是產品**。
+> 範圍：單磁材、未調參——**方法論的遷移證明，不是產品**。
 
 ## JD 條目 → 本 repo 的對應交付
 
