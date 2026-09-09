@@ -1,0 +1,46 @@
+{
+  "material": "Material B",
+  "K": 40000.0,
+  "T": 90.0,
+  "tol": 0.06,
+  "purity_min": 0.95,
+  "n_points": 36,
+  "curve": [
+    {
+      "f_kHz": 199.19,
+      "n": 4,
+      "P_med": 2261216.052377,
+      "b_pk": 0.195015
+    },
+    {
+      "f_kHz": 251.24,
+      "n": 7,
+      "P_med": 2125596.00003,
+      "b_pk": 0.156823
+    },
+    {
+      "f_kHz": 316.46,
+      "n": 7,
+      "P_med": 1864767.342166,
+      "b_pk": 0.123889
+    },
+    {
+      "f_kHz": 396.82,
+      "n": 10,
+      "P_med": 1721403.096141,
+      "b_pk": 0.098637
+    },
+    {
+      "f_kHz": 499.98,
+      "n": 8,
+      "P_med": 1609830.788664,
+      "b_pk": 0.078306
+    }
+  ],
+  "measured_min_kHz": 499.98,
+  "measured_min_P": 1609830.78866434,
+  "f_limit_kHz": 499.98,
+  "P_at_limit": 1609830.78866434,
+  "measured_saving_pct": 0.0,
+  "note": "sine template only; triangle templates have no measured counterpart"
+}

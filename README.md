@@ -108,3 +108,24 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
 方法論與 [polymer-tg-calibration](https://github.com/yschang1688) 同構：零真值情境下用物理規則驗收 ML 預測。
+
+## Measured check of the optimizer's answer (`src/measured_check.py`)
+
+The design sweep scores hypothetical points, so its "saving" is model-vs-model. But the MagNet grid
+is dense: for a given volt-second constant K = B_pk·f and temperature, near-sine measurements exist at
+most frequencies. `measured_check.py` pulls them (±6 % of K, purity ≥ 0.95), bins by frequency and
+reports the measured curve.
+
+| scenario | measured minimum | frequency limit | measured saving | model optima |
+|---|---|---|---|---|
+| K=5e3, 25 °C (n=112) | 199 kHz, 1.27e4 W/m³ (valley 126–250 kHz, all within scatter) | 500 kHz, 1.66e4 W/m³ | **23.6 %** (161 kHz point: 21 %) | residual MLP 161 kHz −14.1 %; LightGBM 250 kHz −26.5 %; Steinmetz says 501 kHz |
+| K=4e4, 90 °C (n=36) | 500 kHz (monotonic) | 500 kHz | 0 % | both models and Steinmetz agree: frequency limit |
+
+Both surrogates place their optimum inside the measured valley; their predicted savings bracket the
+measured 20–24 %. Steinmetz's recommendation (frequency limit) is measurably the worst point on the
+low-K line. Sine template only — the triangle templates have no measured counterpart.
+
+```bash
+python src/measured_check.py --k 5e3 --temp 25
+python src/measured_check.py --k 4e4 --temp 90
+```
