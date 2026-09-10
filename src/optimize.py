@@ -35,11 +35,13 @@ SHAPE_COLS = ["b_form", "crest_dB", "duty_pos", "purity"]
 
 
 def pick_templates(Xtr: pd.DataFrame):
-    """Three excitation templates drawn from real samples: sine-like, symmetric
-    triangle-like, and asymmetric (low duty). Chosen by nearest feature match."""
+    """Three excitation templates drawn from real samples, chosen by nearest
+    (purity, duty) match: sine; a symmetric trapezoid / near-square wave (flat
+    ~80 % of the period, steep edges, hence 4-5x the loss of sine at equal K);
+    and an asymmetric triangle with a 20 % rise time."""
     targets = {
         "sine":          {"purity": 1.00, "duty_pos": 0.50},
-        "triangle_50":   {"purity": 0.80, "duty_pos": 0.50},
+        "trapezoid_50":  {"purity": 0.80, "duty_pos": 0.50},
         "triangle_20":   {"purity": 0.80, "duty_pos": 0.20},
     }
     out = {}
@@ -145,7 +147,7 @@ def main():
     import matplotlib; matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(8, 4.2), dpi=160)
-    colors = {"sine": "#0E6E78", "triangle_50": "#4B545C", "triangle_20": "#A2332A"}
+    colors = {"sine": "#0E6E78", "trapezoid_50": "#4B545C", "triangle_20": "#A2332A"}
     for wf, g in C.groupby("waveform"):
         ax.plot(g["freq"] / 1e3, g["p_ml"] / 1e3, color=colors[wf], lw=2, label=f"{wf}  (surrogate)")
         bad = g[~g["gate_pass"]]
