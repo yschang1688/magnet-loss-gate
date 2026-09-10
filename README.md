@@ -1,131 +1,166 @@
-# magnet-loss-gate — 磁性元件設計參數優化 → MLOps 漂移觸發 → 嵌入式小模型與控制策略表
+# magnet-loss-gate
 
-> 目的：對照一則電源 AI 工程師 JD 的三條職責，用公開實測資料做一輪端到端的可驗證實作（第三條為 PoC：DSP 級小模型＋策略表，迴路整合歸韌體）。
-> 資料：[Princeton MagNet](https://www.princeton.edu/~minjie/magnet.html)（IEEE PELS MagNet Challenge 2023，磁材匿名版 A–E）。
-> 範圍：單磁材、未調參——**方法論的遷移證明，不是產品**。
+用電源領域的公開實測資料，把一則「電源 AI 工程師」JD 的三條工作內容各做了一輪：磁性元件的設計參數優化、MLOps 漂移觸發重訓、以及一個能放進 DSP 的殘差 MLP 與控制策略表。
 
-## JD 條目 → 本 repo 的對應交付
+- 資料：[Princeton MagNet](https://www.princeton.edu/~minjie/magnet.html)（IEEE PELS MagNet Challenge 2023，`final-training.zip`，磁材匿名版 A–E），主線用 Material B，7,400 筆。
+- 範圍：單磁材、未調參。它證明的是方法搬得過來，不是產品做完了。
+- 數字：全部由本 repo 的腳本產出，落在 `reports/*.json`；六支腳本經另一個獨立 agent 重跑，14 個關鍵數字 14 個一致（2026-09-09）。
 
-| JD 條目 | 本 repo 交付 | 進入點 |
-|---|---|---|
-| **1. AI 驅動的設計優化**：多物理域特徵提取＋ML 建模，進行電源設計參數優化（磁性元件…） | 從 B(t) 波形提取 8 個物理特徵 → 代理模型（LightGBM，單調約束）→ **在伏秒約束下掃描 f × 波形，找最低磁芯損耗的工作點**；每個候選過物理閘門 G1–G5 與分布內檢查 | `src/features.py`・`src/train.py`・`src/optimize.py` |
-| **2. MLOps 平台自動化**：減少每次訓練模型時人工介入 | 訓練／優化／漂移三段全記 MLflow；**PSI 漂移檢查 > 0.25 自動標 retrain**，同磁材重抽樣不觸發、換磁材觸發——決策可稽核不靠人記 | `src/drift.py`・`mlflow ui` |
-| **3. 智能控制策略**：AI 補傳統控制器做不好的地方（非線性、多工作點、參數漂移），模型壓到能塞進 MCU/DSP | **PoC**：Steinmetz（固定係數＝傳統模型）當骨幹，疊一個 **401 參數的殘差 MLP**（6→16→16→1，int16 880 bytes，~370 MAC ≈ 3.7 µs @100 MHz）——非弦波、跨溫度、換磁材各有數字（下表）；輸出 `include/residual_mlp.h`。另附**策略表**（`policy.py`：K×T→f*，容忍帶平滑＋跳幅驗收，`policy_table.h`）。**迴路層**（PWM／ADC／保護／遲滯）歸韌體，介面決策由這邊附數字提出 | `src/embedded.py`・`src/policy.py`・`include/` |
+## 1. 先給結果
 
-## 結果（Material B，n=7,400）
+| JD 要的是什麼 | 這裡怎麼做 | 量出來的數字 | 進入點 |
+|---|---|---|---|
+| **設計優化**：從多物理域資料抽特徵、建模型，幫電源設計找參數 | 7,400 筆磁芯損耗實測 → 從波形算出 8 個有物理出處的特徵 → 經驗公式 P<sub>v</sub> = k·f<sup>α</sup>·B<sub>pk</sub><sup>β</sup> 當骨幹，401 參數的殘差 MLP 只補它算不到的部分 → 在伏秒約束下掃 180 個設計候選，每個先過閘門，取損耗最低的點 | p95 相對誤差 82.7% → **4.0%**；低伏秒情境比經驗公式建議的工作點**省 14%**（實測沿同一條線量到 20–24%）；閘門攔下純 ML 對照組給的 0.80 T 不可能解 | `src/features.py`・`src/embedded.py`・`src/optimize.py`・`src/measured_check.py` |
+| **MLOps**：減少每次重訓的人工介入 | 訓練、優化、漂移三段都記在 MLflow；每批新資料先算分布差異（PSI），任一特徵超過 0.25 就標重訓，重訓完自動再過一次閘門 | 同磁材新資料 PSI 0.008 → keep；換磁材 PSI 2.45 → retrain。判斷由數字給，不靠人記 | `src/drift.py`・`mlflow ui` |
+| **控制策略**：用小模型補傳統控制器的弱點（非線性、多工作點、參數漂移），要塞得進 MCU/DSP | 同一個 401 參數殘差 MLP：int16 後 **880 bytes、368 次乘加、約 3.7 µs 算一次**（假設 1 MAC/cycle @100 MHz）；另附「工作條件 → 最佳頻率」策略表給迴路層 | 非弦波 77% → **4%**；留一個溫度不看再預測 **5–13%**；換磁材只給 200 筆微調 741% → **30%** | `src/embedded.py`・`src/policy.py`・`include/` |
 
-**代理模型 vs 經驗式**（p95 相對誤差，75/25 隨機切分）
+用詞：**殘差 MLP**＝採用的模型，經驗公式當骨幹、401 參數的 MLP 只學殘差；**純 ML 對照組**＝LightGBM 加單調約束，沒有物理骨幹。
 
-| 模型 | p95 誤差 | G2/G3 單調性違規率 |
-|---|---|---|
-| Steinmetz 經驗式（全波形擬合，α=1.84／β=2.07） | 82.7% | — |
-| LightGBM | 16.7% | 0.25% |
-| **LightGBM＋單調約束（採用）** | 20.2% | **0%** |
+## 2. 資料長什麼樣，經驗公式在哪裡開始不準
 
-**經驗公式誤差的分層**（同一測試集，把它看不見的變數一層層加回去）：只弦波、單一溫度擬合 p95 35–39% → 弦波、四溫度 64% → 所有波形一組係數 82.7%（弦波 88／非弦波 77——混合擬合的妥協解被非弦波帶走；只用弦波擬合則為 64／74）→ 留 25 °C 外推 141%。溫度是主因、波形其次；即使在主場也有 37%，一組 α/β 撐不住整個 f×B 範圍。
+**資料**：每筆是一段磁通波形 B(t)（1,024 點）、一個頻率、一個溫度（25／50／70／90 °C），對應實驗室量到的體積損耗（W/m³）。損耗就是 B-H 迴圈的面積乘以頻率，資料集裡的損耗值正是這樣量出來的。
 
-單調約束多付 3.5 個百分點的誤差，換到「模型的錯誤都在物理允許範圍內」——這是設計優化能用的前提。
+**8 個特徵**，每個都從 B(t) 算得出來、都有損耗物理的出處：頻率、溫度、磁通峰值（經驗公式的三個輸入）；半擺幅（抓直流偏置）；波形因數（弦波 0.707、三角 0.577，一個數字分波形家族）；變化率峰因數與正斜率占比（渦流損跟 dB/dt 的平方走）；基頻純度（FFT 基頻能量占比，量離弦波多遠）。
 
-**設計參數優化**（`B_pk · f = K` 伏秒約束，掃 60 個頻率 × 3 種資料集內波形樣板 = 180 個候選）
+**刻意不用兩樣**：H 場，因為用它等於把答案餵進模型，而且預測新設計點時根本拿不到 H；原始 1,024 點，因為驗收不動，沒人能對一個吃原始波形的序列模型問「頻率升高損耗會不會降」。
 
-| 情境 | 經驗式建議 | 閘門後最佳點 | 損耗節省 | 閘門攔下 |
+**Steinmetz 經驗公式** P<sub>v</sub> = k·f<sup>α</sup>·B<sub>pk</sub><sup>β</sup> 只吃頻率與磁通峰值；本資料擬合 α=1.84、β=2.07，落在文獻常見的 α 1–2、β 2–3 之間。把它看不見的變數一層層加回去量（p95 相對誤差，測試集 n=1,850）：
+
+| 經驗公式的擬合條件 | p95 |
+|---|---|
+| 只弦波、單一溫度（它的主場） | 35–39% |
+| 只弦波、四個溫度一起擬 | 64% |
+| 所有波形一組係數 | 82.7%（弦波 88／非弦波 77：混合擬合被非弦波帶走；只用弦波擬合則為 64／74） |
+| 把 25 °C 整段拿掉再預測 | 141% |
+
+溫度是主因、波形其次；就算在主場也有 37%，一組 α、β 撐不住整個 f×B 範圍。
+
+**兩種考法都會報**：隨機切 75/25，考題附近一定有訓練資料，是內插，數字偏樂觀；留一整個溫度不看，考題沒有鄰居，是外推，才是設計優化真正會遇到的情況。
+
+## 3. 演算法：經驗公式當骨幹，殘差 MLP 只補剩餘
+
+`log P = Steinmetz(f, B_pk) + g(ln f, ln B_pk, T, purity, duty, crest)`，g 是 6→16→16→1 的 tanh MLP，401 個參數。經驗公式先吃掉頻率與磁通的主結構，MLP 只剩一塊平滑的殘差要學，所以小也學得好；這也是它只有 880 bytes 的原因。
+
+| 模型（Material B，測試集 n=1,850） | p50 | p95 | p99 | G2/G3 單調違規 |
 |---|---|---|---|---|
-| 低伏秒 K=5e3, 25 °C | 501 kHz（推到頻率上限） | **~250 kHz** | **26.5%** | 2/180 |
-| 高伏秒 K=4e4, 90 °C | 501 kHz | **~446 kHz** | **18.4%** | **146/180**；裸模型最佳點落在 50 kHz、B_pk=0.80 T（鐵氧體飽和的兩倍）、離訓練分布 13.4（門檻 0.58）——**優化器鑽進了代理模型外推最錯的角落，被 G5 飽和與分布內檢查攔下** |
+| Steinmetz 經驗公式 | 24.6% | 82.7% | 113.5% | — |
+| LightGBM（不加約束） | 3.2% | 16.7% | 28.2% | 0.25%（Material E 約 3%） |
+| 純 ML 對照組（LightGBM＋單調約束） | 4.4% | 20.2% | 33.3% | 0% |
+| **殘差 MLP（採用）** | **1.2%** | **4.0%** | **6.7%** | **0%**（未加約束，自然單調） |
 
-**代理交叉檢驗（`--bundle=-mlp`：換成 JD3 的 Steinmetz＋殘差 MLP 當代理）**
+拿 p95 當標題：優化器的失敗住在尾巴不在中位數；p99 在 1,850 筆只由最差 18 筆決定，換一次切分就會動。相對誤差在線性損耗值上算，不是 log 空間。
 
-| 情境 | LightGBM＋單調 | Steinmetz＋殘差 MLP |
+純 ML 對照組留著，它示範沒有物理骨幹時，優化器會被模型的錯誤帶到哪裡去（第 5 節）。
+
+## 4. 設計優化：經驗公式永遠說「頻率越高越好」，模型找到真正的最低點
+
+**設計題怎麼來**：法拉第 V = N·A<sub>e</sub>·dB/dt，電壓與匝數由應用給定，所以 B<sub>pk</sub>·f ≈ 常數 K；自由變數只剩頻率與波形。demo 用 K = 5,000 與 40,000 T·Hz 代表低、高伏秒，掃 60 個頻率 × 3 種從實測挑出的波形樣板（sine／triangle_50／triangle_20）= 180 個候選。
+
+**經驗公式為什麼永遠推高頻**：代入約束得 P<sub>v</sub> ∝ K<sup>β</sup>·f<sup>α−β</sup>，α<β 所以頻率越高損耗越低，答案永遠是頻率上限（邊界解）。實測在高頻多了渦流等機制，曲線會翹回來。
+
+**同一把尺**：比較兩個設計點時都用同一個模型評估；○ 是閘門後最佳點，□ 是經驗公式推薦的 501 kHz 用同一個模型算的值，兩者的差才是節省。圖上的虛線是經驗公式自己算的損耗，高頻低估，不能拿來跟實線比高低。
+
+| 情境 | 純 ML 對照組 | 殘差 MLP（採用） |
 |---|---|---|
-| 低伏秒最佳點／vs 經驗式推薦 | ~250 kHz／−26.5% | **~161 kHz／−14.1%** |
-| 高伏秒裸最佳點 | 50 kHz、B_pk 0.80 T（掉洞，閘門攔） | **501 kHz、可行區內（不掉洞）**；閘門後＝經驗式推薦點，−0% |
-| 策略表：裸表被否決／鄰格跳幅（tol 0.20） | 10/28／4.6×→2.1× | **1/28／3.8×→1.5×**，f* 隨伏秒單調上升 |
+| 低伏秒 K=5e3, 25 °C：最佳點／vs 經驗公式推薦 | ~250 kHz／−26.5% | **161 kHz／−14.1%** |
+| 高伏秒 K=4e4, 90 °C：裸最佳點 | 50 kHz、B<sub>pk</sub> 0.80 T（掉洞，閘門攔下） | **501 kHz、可行區內（不掉洞）**；閘門後＝頻率上限，與經驗公式一致 |
+| 高伏秒被閘門刪掉的候選 | — | **146/180**（100 kHz 以下全部超過飽和、且離訓練資料太遠） |
+| 曲面 | 分段常數（階梯狀） | 平滑 |
 
-讀法：①**節省幅度依代理而異**（26.5% vs 14.1%）——這個差距就是「排序不取代模擬」的理由；②純 ML 代理外推會掉洞、靠閘門救，**物理骨幹＋殘差的代理自己不掉洞**——把物理寫進模型結構的第二層證據；閘門仍留著，擋的是我們沒想到的錯；③高伏秒時頻率上限本來就是最佳點，經驗式在那裡是對的。
+節省幅度依模型而異（14.1% vs 26.5%），這個差距就是「排序不取代模擬」的理由。波形間（sine vs triangle）的差異在模型雜訊帶內，本 demo 不對波形下結論。
 
-Steinmetz 因 α<β 永遠把設計推到頻率上限（邊界解）；代理模型找到內部最佳點。**「損耗節省」＝用同一把尺（代理模型）評估兩個設計點的差**——圖上的虛線是 Steinmetz 自己算的損耗，高頻低估（其 82.7% 誤差的來源），不可與實線直接比；真實節省要以模擬／量測驗證，這正是管線「排序不取代模擬」的理由。波形間（sine vs triangle）的差異在模型雜訊帶內，本 demo 不對波形下結論。
+### 4.1 實測對照（`src/measured_check.py`）
 
-**嵌入式小模型 PoC**（`embedded.py`，Material B）：`log P = Steinmetz(f, B_pk) + g(ln f, ln B_pk, T, purity, duty, crest)`，g 為 6→16→16→1 tanh MLP
+設計掃描評的是沒量過的設計點，所以「節省」是模型算的。但 MagNet 網格夠密：沿同一條 K 線，近弦波（純度 ≥ 0.95、K 誤差 ±6%）的量測點每個頻率都有。把它們依頻率分箱取中位，實測自己就是一條曲線：
 
-| 傳統模型的弱點 | Steinmetz 固定係數 | ＋401 參數殘差 MLP |
+| 情境 | 實測曲線 | 實測最低點 | 相對頻率上限的節省 | 模型的答案 |
+|---|---|---|---|---|
+| K=5e3, 25 °C（n=112） | **U 形**，谷底 126–250 kHz（散布內平坦） | 199 kHz，1.27×10⁴ W/m³ | **23.6%**（161 kHz 那格 21%） | 殘差 MLP 161 kHz、純 ML 250 kHz 都在谷底內；經驗公式推薦的 500 kHz 是這條線最差的點 |
+| K=4e4, 90 °C（n=36） | 單調下降 | 500 kHz | 0% | 三個模型都說頻率上限 |
+
+只驗得了弦波樣板，三角波沒有對應量測；驗的是谷底位置對不對，不是每個候選點準不準。
+
+**K 與溫度拆開看**（同一支腳本，`--k 5e3/2e4/4e4 × --temp 25/90`）：K=2e4 與 4e4 在兩個溫度下都單調降到 500 kHz；只有 K=5e3 且 25 °C 呈 U 形（500 kHz 比谷底高 30%），K=5e3、90 °C 幾乎是平的（126→500 kHz 只降 6%）。同一個 f、同一個 B<sub>pk</sub> 下，90 °C 的損耗是 25 °C 的 1.6–2.2 倍：溫度把整條線抬高，不是把最佳點推走。物理上沿固定伏秒線走，磁滯損 ∝ f·B<sup>β</sup> = K<sup>β</sup>·f<sup>1−β</sup> 隨頻率下降、古典渦流損 ∝ f²·B² = K² 是常數，所以高伏秒時頻率越高越好；低伏秒、低磁通才會在高頻翹回來（低磁通密度下的殘餘損耗隨頻率上升，常見解釋，未驗證）。
+
+## 5. 閘門：模型再準，閘門也不能省，它畫的是可行域，不是準度
+
+| 型 | 閘門 | 怎麼檢核 | 門檻怎麼來 |
+|---|---|---|---|
+| 結構 | G1 損耗恆正・G2/G3 對頻率與磁通單調 | 先用探針量違規率，再把單調性寫進模型結構 | 純 ML 不加約束探到 0.25%（Material E 3%）違規，證明探針抓得到東西；殘差 MLP 0% |
+| 合理範圍 | G4 與經驗公式偏離超過 3 倍 | 逐筆列出，不自動改 | 經驗公式自己的 p95 82.7% 約 1.8 倍，門檻要落在它的誤差帶之外 |
+| 設計規則 | G5 B<sub>pk</sub> ≤ 0.40 T | 飽和硬界 | 鐵氧體室溫約 0.45–0.5 T，高溫會降，取保守值；資料裡沒有飽和這件事，模型不會自己知道 |
+| 資料覆蓋 | 分布內 | 候選到訓練集的最近距離 ≤ 訓練點彼此距離的 95 分位（0.58） | 門檻從資料算出來，不手調 |
+
+寫得進模型結構的（單調）都寫進去了；寫不進去的（飽和、分布外）留在閘門。純 ML 對照組在高伏秒挑到 0.80 T（飽和的 2 倍、離訓練資料 13.4 倍門檻）：訓練資料的 B<sub>pk</sub> 最高只到 0.254 T，0.8 T 對模型是純外推，樹模型外推等於沿用邊界葉子的值。飽和是設計規則，不是資料規則；資料裡沒有的物理，要用規則補。閘門畫可行域（物理），模型在可行域裡找最好（資料），兩個都要。
+
+## 6. MLOps：什麼時候該重訓，讓資料決定、不靠人記
+
+`train.py`（模型＋閘門指標）→ `optimize.py`（設計掃描＋圖）→ `drift.py`（新舊資料逐特徵算 PSI）→ 任一特徵 PSI > 0.25 就標重訓 → 三段都記在 MLflow（`sqlite:///mlflow.db`），誰都能回頭查那天為什麼重訓。
+
+PSI：把參考分布與新分布各切 10 桶，算 Σ(新 − 舊)·ln(新／舊)。0.25 是風控界的慣例門檻，不是物理定律。實跑：同磁材重抽樣 PSI 最大 0.008 → keep；換成 Material E 的波形 PSI 最大 2.45（b_pk）→ `retrain_triggered=true`。
+
+PSI 只是輸入側的第一道。[hvac-load-forecast](https://github.com/yschang1688/hvac-load-forecast) 實測在非平穩場域 PSI 624/624 週全部警報、等於沒監控；第二道要監控預測殘差。磁材資料相對平穩，PSI 在此站得住，殘差監控仍是待補。
+
+## 7. 嵌入式：殘差 MLP 與控制策略表（JD 3 的 PoC）
+
+**傳統模型的三個弱點，各補到多少**（`embedded.py`，Material B，p95）
+
+| 弱點 | Steinmetz 固定係數 | ＋401 參數殘差 MLP |
 |---|---|---|
-| 非線性（非弦波激磁，n=944） | p95 77.4% | **4.1%** |
-| 多工作點（留一整個溫度不看，跨工作點外推） | 56–141% | **5–13%**（25 °C 外推 13.2、50 °C 6.0、70 °C 5.0、90 °C 10.9） |
+| 非線性（非弦波激磁，n=944） | 77.4% | **4.1%** |
+| 多工作點（留一整個溫度不看，跨工作點外推） | 56–141% | **5–13%**（25 °C 13.2、50 °C 6.0、70 °C 5.0、90 °C 10.9） |
 | 參數漂移（換成 Material E，用 200 個新樣本再擬合） | 沿用舊模型 741%；只重擬 SE 69.7% | **29.8%**（重擬 SE＋微調 MLP） |
-| 隨機切分整體 p95（樂觀值） | 82.7% | 4.0% |
 
 | 嵌入成本 | 值 |
 |---|---|
 | 參數／MAC | 401／368（≈3.7 µs @100 MHz，假設 1 MAC/cycle） |
 | float32／int16／int8 | 1,604 B（p95 4.0）／**880 B（p95 4.0，採用）**／512 B（p95 14.6，每張量 int8 損失太大，不採用） |
-| 物理閘門 G2/G3 | 違規率 0%（未加約束，小模型自然單調） |
+| 輸出 | `include/residual_mlp.h` |
 
-小模型準過 LightGBM（p95 4.0 vs 20.2）不是因為它更強，是因為<b>殘差學習站在物理骨幹上</b>——Steinmetz 先吃掉主結構，MLP 只補平滑的剩餘；這也是它能塞進 DSP 的原因。
+**控制策略表**（`policy.py`，7 個 K × 4 個 T ＝ 28 格，輸出 `include/policy_table*.h`）
 
-**控制策略表**（`policy.py`，Material B，7 個 K × 4 個 T ＝ 28 格）
-
-| 指標 | 值 |
-|---|---|
-| 過閘覆蓋 | 28/28 格有可行點 |
-| 裸 argmin 表被閘門否決 | **10/28 格**（36%）——沒有閘門的策略表有三分之一格子是幻覺 |
-| 鄰格最大跳幅（argmin） | ln 1.52 ≈ **4.6×**——直接燒進 DSP 會在迴路裡抖 |
-| 容忍帶平滑（損耗容忍 5% / 10% / **20%** / 30%） | 跳幅 4.6× / 4.25× / **2.1×** / 2.1×；最壞格損耗代價 4.7% / 9.3% / **19%** / 30% |
-| 採用 | tol=0.20：跳幅壓到 2.1×，剩餘的 2.1×（90 °C、K 3e3→5e3）是真實雙谷（低頻谷被飽和閘門切掉）→ **建議韌體在該邊界加遲滯**，不由策略表再付損耗硬壓 |
-
-策略層與迴路層的分工：策略表回答「這個工作條件該用哪個頻率、為什麼、哪裡會跳」；韌體回答「怎麼在 µs 內切過去、切換時保護怎麼做」。
-
-**漂移觸發**（`drift.py`）：同磁材重抽樣 PSI 最大 0.008 → 不重訓；換成 Material E 的波形 PSI 最大 2.45（b_pk）→ `retrain_triggered=true`。
-
-## 閘門 G1–G5
-
-| 閘門 | 檢核 | 依據 |
+| 指標 | 純 ML 對照組 | 殘差 MLP（採用） |
 |---|---|---|
-| G1 | 預測損耗恆正 | log-target 結構性成立 |
-| G2 | 損耗隨 f 不下降 | 渦流／磁滯損耗單調（單調約束後結構性成立） |
-| G3 | 損耗隨 B_pk 不下降 | Steinmetz β>0（同上） |
-| G4 | 與 Steinmetz 偏離 >3× 逐筆列出 | 經驗式是域內共識的 sanity bound |
-| G5 | B_pk ≤ B_sat（預設 0.40 T） | 飽和是設計規則不是資料規則——資料裡沒有、模型不會知道 |
-| OOD | 候選到訓練集的 kNN 距離 ≤ 訓練自距離 95 分位 | 代理模型只在看過的區域可信 |
+| 過閘覆蓋 | 28/28 | 28/28 |
+| 裸 argmin 表被閘門否決 | 10/28（36%） | **1/28** |
+| 鄰格最大跳幅：裸表 → 容忍帶平滑（tol 0.20） | 4.6× → 2.1× | **3.8× → 1.5×**，f* 隨伏秒單調上升 |
 
-## 已知限制（會被追問的）
+剩餘的跳點是真實雙谷（低頻谷被飽和閘門切掉），建議韌體在該邊界加遲滯，不由策略表再付損耗硬壓。分工：策略表回答「這個工作條件該用哪個頻率、為什麼、哪裡會跳」；韌體回答「怎麼在 µs 內切過去、切換時保護怎麼做」。這是損耗模型，不是控制器。
 
-- 樹模型的代理曲面是分段常數（圖上的鋸齒）；優化採透明網格掃描，BO／平滑代理是下一步。策略表的跳幅一部分來自這個鋸齒。
-- PSI 只是輸入側的第一道漂移訊號；[hvac-load-forecast](https://github.com/yschang1688/hvac-load-forecast) 實測在非平穩場域 PSI 624/624 週全 alert、無鑑別力——第二道要監控預測殘差。磁材資料相對平穩，PSI 在此適用，但殘差監控仍是待補。
-- 單磁材內隨機切分，無跨磁材泛化宣稱；Steinmetz 以全波形擬合，僅當 sanity bound。
-- 伏秒約束把設計變數簡化為 (f, 波形)；實務還有繞組損、體積、熱——同框架可加目標與約束。
+## 8. 搬過去的不是模型，是一條管線和三個接點
+
+Material B 的模型到別的磁材、別的域一文不值；能移植的是管線與三個接點：
+
+1. **資料入口**：從模擬輸出（ANSYS／PLECS）與量測台的實測檔抽特徵。每個域的第一個交付是 parser，不是模型。
+2. **插在模擬前面做排序**：模型幾秒掃完候選，閘門砍掉物理不通的，只送前幾個跑模擬、做樣機。
+3. **交給域專家否決**：附閘門理由的候選表進設計評審，域專家保留否決權；被否決的案例是最好的訓練資料。
+
+JD 3 的分工：殘差 MLP（880 bytes）與策略表從這邊出去；迴路整合、遲滯、保護與韌體一起做。四個域共用同一條管線，parser 和閘門規則與韌體工程師一起討論。KPI 量設計流程：每輪迭代的模擬次數、樣機次數、設計週期。
+
+## 9. 已知限制（先自己列）
+
+- **單磁材、未調參**。隨機切分的 4% 是樂觀值，留溫度外推的 5–13% 才是跨工作點的實力；沒有跨磁材泛化的宣稱。
+- **伏秒約束把設計變數簡化成頻率與波形**。真實設計還有匝數、磁芯尺寸、氣隙；目標還有繞組損、體積、熱。同一個框架可以加，這次沒加。
+- **節省幅度依模型而異**（14% vs 26%；實測弦波 20–24%）。弦波已用量測點驗過谷底位置，三角波沒有對應量測、要模擬。
+- **JD 3 是 PoC 不是控制器**。殘差 MLP 補的是損耗模型，是策略的一個元件；迴路整合、遲滯、保護在韌體。int8 量化損失太大（14.6%），所以出 int16。
+- **基準用原版 Steinmetz**。它就是韌體裡那條固定係數公式，殘差 MLP 補的正是它看不見的溫度和波形；用非弦波改良版（iGSE）當基準會更公平，非弦波那層的差距會縮小，但 iGSE 也沒有溫度輸入，溫度那層一樣補不了。
+- 樹模型的代理曲面是分段常數；優化採透明網格掃描，貝氏優化與平滑代理是下一步。
+- 資料只量到 500 kHz；高伏秒「最佳點＝頻率上限」是資料上限，上限之外有沒有翹回來看不到。
 
 ## 跑法
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
 # data/extracted/final-training/：從 Princeton 頁面下載 final-training.zip 解壓
-.venv/bin/python src/train.py    --material "Material B" --data data/extracted/final-training
-.venv/bin/python src/optimize.py --material "Material B" --k 4e4 --temp 90            # 加 --bundle=-mlp 換殘差 MLP 代理（先跑 src/mlp_surrogate.py）
-.venv/bin/python src/drift.py    --material "Material B" --batch other --other "Material E"
-.venv/bin/python src/policy.py   --material "Material B"          # 策略表 + include/policy_table.h
-.venv/bin/python src/embedded.py --material "Material B" --adapt-material "Material E"   # 嵌入式小模型 PoC + include/residual_mlp.h
+.venv/bin/python src/train.py          --material "Material B" --data data/extracted/final-training
+.venv/bin/python src/mlp_surrogate.py                                              # 建殘差 MLP 代理 models/Material B-mlp.joblib
+.venv/bin/python src/optimize.py       --material "Material B" --k 5e3 --temp 25 --bundle=-mlp
+.venv/bin/python src/optimize.py       --material "Material B" --k 4e4 --temp 90 --bundle=-mlp   # 省略 --bundle 則用純 ML 對照組
+.venv/bin/python src/measured_check.py --k 5e3 --temp 25                                          # 實測對照；換 --k / --temp 看 K 與溫度
+.venv/bin/python src/drift.py          --material "Material B" --batch other --other "Material E"
+.venv/bin/python src/policy.py         --material "Material B" --bundle=-mlp                      # 策略表 + include/policy_table_mlp.h
+.venv/bin/python src/embedded.py       --material "Material B" --adapt-material "Material E"      # 嵌入式 PoC + include/residual_mlp.h
 .venv/bin/mlflow ui --backend-store-uri sqlite:///mlflow.db
 ```
 
-方法論與 [polymer-tg-calibration](https://github.com/yschang1688) 同構：零真值情境下用物理規則驗收 ML 預測。
-
-## Measured check of the optimizer's answer (`src/measured_check.py`)
-
-The design sweep scores hypothetical points, so its "saving" is model-vs-model. But the MagNet grid
-is dense: for a given volt-second constant K = B_pk·f and temperature, near-sine measurements exist at
-most frequencies. `measured_check.py` pulls them (±6 % of K, purity ≥ 0.95), bins by frequency and
-reports the measured curve.
-
-| scenario | measured minimum | frequency limit | measured saving | model optima |
-|---|---|---|---|---|
-| K=5e3, 25 °C (n=112) | 199 kHz, 1.27e4 W/m³ (valley 126–250 kHz, all within scatter) | 500 kHz, 1.66e4 W/m³ | **23.6 %** (161 kHz point: 21 %) | residual MLP 161 kHz −14.1 %; LightGBM 250 kHz −26.5 %; Steinmetz says 501 kHz |
-| K=4e4, 90 °C (n=36) | 500 kHz (monotonic) | 500 kHz | 0 % | both models and Steinmetz agree: frequency limit |
-
-Both surrogates place their optimum inside the measured valley; their predicted savings bracket the
-measured 20–24 %. Steinmetz's recommendation (frequency limit) is measurably the worst point on the
-low-K line. Sine template only — the triangle templates have no measured counterpart.
-
-```bash
-python src/measured_check.py --k 5e3 --temp 25
-python src/measured_check.py --k 4e4 --temp 90
-```
+方法論與 [polymer-tg-calibration](https://github.com/yschang1688) 同構：沒有真值的情境下，用物理規則驗收 ML 預測。
