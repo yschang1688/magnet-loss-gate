@@ -99,6 +99,8 @@
 
 PSI：把參考分布與新分布各切 10 桶，算 Σ(新 − 舊)·ln(新／舊)。0.25 是風控界的慣例門檻，不是物理定律。實跑：同磁材重抽樣 PSI 最大 0.008 → keep；換成 Material E 的波形 PSI 最大 2.45（b_pk）→ `retrain_triggered=true`。
 
+現場示範用 `bash demo_mlops.sh`：跑同磁材（keep）與換磁材（retrain）兩個案例，再列出 MLflow 裡歷次判斷的紀錄。
+
 PSI 只是輸入側的第一道。[hvac-load-forecast](https://github.com/yschang1688/hvac-load-forecast) 實測在非平穩場域 PSI 624/624 週全部警報、等於沒監控；第二道要監控預測殘差。磁材資料相對平穩，PSI 在此站得住，殘差監控仍是待補。
 
 ## 7. 嵌入式：殘差 MLP 與控制策略表（JD 3 的 PoC）
