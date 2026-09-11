@@ -169,11 +169,19 @@ def main():
     ax.annotate("", xy=(se_best["freq"] / 1e3, se_best["p_ml"] / 1e3), xytext=(gated["freq"] / 1e3, gated["p_ml"] / 1e3),
                 arrowprops=dict(arrowstyle="-", color="#0E6E78", lw=1, ls=":"))
     ax.set_xscale("log")
+    # log-log, datasheet convention (P_v vs f). A span under one decade leaves
+    # matplotlib's log axis with no labelled ticks, so label minor ticks at
+    # mantissa 2/3/5/7 explicitly.
+    ax.set_yscale("log")
     ax.set_xlabel("switching frequency f [kHz]   (B_pk = K / f, K = %.0e T·Hz, T = %.0f °C)" % (args.k, args.temp))
-    ax.set_ylabel("core loss P_v [kW/m³]")
+    ax.set_ylabel("core loss P_v [kW/m³]  (log)")
     ax.set_title(f"{args.material} — design sweep under volt-second constraint  (× = gate reject)", fontsize=10)
     from matplotlib.ticker import FuncFormatter
+    def _mant_lab(v, _):
+        m = v / (10 ** np.floor(np.log10(v)))
+        return f"{v:,.0f}" if round(m, 4) in (2.0, 3.0, 5.0, 7.0) else ""
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:,.0f}"))
+    ax.yaxis.set_minor_formatter(FuncFormatter(_mant_lab))
     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}")); ax.xaxis.set_minor_formatter(FuncFormatter(lambda v, _: f"{v:g}" if v in (60,70,80,90,200,300,400) else ""))
     ax.grid(True, which="both", alpha=.25); ax.legend(fontsize=7.5, ncol=1, loc="upper left", framealpha=.92)
     fig.tight_layout(); fig.savefig(out / f"{args.material}-optimize-{tag}.png"); plt.close(fig)
